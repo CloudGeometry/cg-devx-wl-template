@@ -1,0 +1,72 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: "wl-wf-"
+spec:
+  arguments:
+    parameters:
+      - name: registry
+        value: <REGISTRY_REGISTRY_URL>
+      - name: dockerhub-registry-proxy
+        value: <REGISTRY_DOCKERHUB_PROXY>
+      - name: gcr-registry-proxy
+        value: <REGISTRY_GCR_PROXY>
+      - name: workload-name
+        value: <WL_NAME>
+      - name: wl-service-name
+        value: <WL_SERVICE_NAME>
+      - name: repo
+        value: <WL_REPO_NAME>
+      - name: tag
+        value: ""
+
+  volumeClaimTemplates:
+    - metadata:
+        name: build
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 8Gi
+  entrypoint: ci-sequence
+  imagePullSecrets:
+  - name: docker-config
+  onExit: exit-handler
+  volumes:
+  - name: kaniko-secret
+    secret:
+      secretName: docker-config
+      items:
+        - key: .dockerconfigjson
+          path: config.json
+
+  templates:
+  - name: ci-sequence
+    dag:
+      tasks:
+      - name: git-clone
+        templateRef:
+          name: git-clone-wft
+          template: git-clone
+      - name: kaniko
+        dependencies: [git-clone]
+        templateRef: 
+          name: kaniko-wft
+          template: kaniko
+      - name: trivy-fs-scan
+        dependencies: [git-clone]
+        templateRef:
+           name: trivy-fs-scan-wft
+           template: trivy-fs-scan
+      - name: crane
+        dependencies: [git-clone,kaniko] 
+        templateRef: 
+            name: crane-wft
+            template: crane
+  - name: exit-handler
+    container:
+      image: "{{workflow.parameters.dockerhub-registry-proxy}}/library/alpine"
+      imagePullPolicy: IfNotPresent
+      command: [sh, -c]
+      args: ["echo  {{workflow.name}} {{workflow.status}} {{workflow.duration}}"]
+  
