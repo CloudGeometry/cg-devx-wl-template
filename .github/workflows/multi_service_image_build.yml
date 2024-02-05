@@ -1,12 +1,13 @@
 ---
-name: multi_service_image_build
+name: multi_build_root
 on:
   push:
-    tags: ['[0-9]+.[0-9]+.[0-9]+-?*']
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+-?*'
 env:
   TAG: ${{ github.ref }}
   REPO_NAME: ${{ github.repository }}
-  ARGO_NAMESPACE: argo
+  ARGO_NAMESPACE: wl-vt-cnask-dev
   SEMVER_REGEX: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
 jobs:
   multi_build:
@@ -31,7 +32,7 @@ jobs:
       - name: argo cli install
         run: |
           # Download the binary
-           curl -sLO https://github.com/argoproj/argo-workflows/releases/download/v3.5.2/argo-linux-amd64.gz
+           curl -sLO https://github.com/argoproj/argo-workflows/releases/download/v3.5.4/argo-linux-amd64.gz
            gunzip argo-linux-amd64.gz
            chmod +x argo-linux-amd64
            sudo mv ./argo-linux-amd64 /usr/local/bin/argo
@@ -43,8 +44,11 @@ jobs:
           DIFF_TAGS=`git tag --sort=-creatordate | grep -P $SEMVER_REGEX | head -2`
           if [[ `echo $DIFF_TAGS | wc -w` -gt 1 ]]
           then
-            LIST_DIR=`git diff-tree --no-commit-id --dirstat=files,0  -r $DIFF_TAGS | \
-                      awk  '{print $2;};' | sed -r 's/^([^/]*)\/.*$/\1/'| uniq`
+            LIST_DIR=`git diff-tree --no-commit-id --dirstat=files,0  -r $DIFF_TAGS | awk  '{print $2;};' | sed -r 's/^([^/]*\/[^/]*)\/.*$/\1/'| uniq`
+            if [[ "$LIST_DIR" =~ libs ]]; then LIST_DIR=`ls -1d apps/*`;fi
+          elif [[ -d apps ]]
+          then 
+            LIST_DIR=`ls -1d apps/*`
           else
             LIST_DIR=`ls -1d */ | sed -r 's/\/$//'`
           fi
@@ -54,32 +58,53 @@ jobs:
           do 
             if [[ -e $DIR/src && -e $DIR/Dockerfile ]]
             then
+              DIR=`echo $DIR| sed -r 's/\/$//'`
               CHANGED_WLS_DIRS+=("$DIR")
             fi  
           done
           echo "CHANGED_WLS_DIRS=${CHANGED_WLS_DIRS[@]}">> "$GITHUB_ENV"
-          for wl_service in ${CHANGED_WLS_DIRS[@]}
+          for wl_service_dir in ${CHANGED_WLS_DIRS[@]}
           do
+              wl_service=`basename ${wl_service_dir}`
+              if [[ ${wl_service_dir} =~ ^app ]]
+                then 
+                    DOCKERFILE="${wl_service_dir}/Dockerfile"
+                    BUILD_CONTEXT=""
+                    echo "APP_STRUCT=1">>"$GITHUB_ENV"
+                else
+                    DOCKERFILE="Dockerfile"
+                    BUILD_CONTEXT="${wl_service_dir}"
+              fi
               argo submit .argo/wl-service-wf.yaml \
                     --generate-name ${wl_service}-wf- \
-                    -p repo=git@github.com:<GIT_ORGANIZATION_NAME>/<WL_REPO_NAME>.git \
+                    -p repo=git@github.com:cgdevx-demo/vt-cnask.git \
                     -p wl-service-name=$wl_service \
-                    -p workload-name=<WL_REPO_NAME> \
+                    -p workload-name=vt-cnask \
                     -p tag=$TAG \
+                    -p dockerfile=${DOCKERFILE} \
+                    -p build-context=${BUILD_CONTEXT} \
+                    -p wl-service-dir=${wl_service_dir} \
+                    --serviceaccount argo-workflow \
                     --wait --log 
           done
       - name: version change in gitops repo
         env:
           CHANGED_WLS_DIRS: ${{ env.CHANGED_WLS_DIRS }}
+          APP_STRUCT: ${{ env.APP_STRUCT }}
         run: |-
           echo "CHANGED workload-services (array): ${CHANGED_WLS_DIRS[@]}"
           if [[ ${#CHANGED_WLS_DIRS[@]} -gt 0 ]]
           then
-           argo submit .argo/version-changer-wf.yaml \
-              -p gitops-repo=git@github.com:<GIT_ORGANIZATION_NAME>/<WL_GITOPS_REPO_NAME>.git \
+             echo "${CHANGED_WLS_DIRS[@]}"
+             if  [[ $APP_STRUCT -ne 1 ]]
+             then
+               argo submit .argo/version-changer-wf.yaml \
+              -p gitops-repo=git@github.com:cgdevx-demo/vt-cnask-gitops.git \
               -p wl-service-list="${CHANGED_WLS_DIRS[@]}" \
               -p env-path="gitops/environments/envs" \
               -p env-name="dev" \
               -p tag=${TAG} \
+              --serviceaccount argo-workflow \
               --wait --log
+             fi
           fi
