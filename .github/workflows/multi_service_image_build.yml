@@ -1,5 +1,5 @@
 ---
-name: multi_build_root
+name: multi_service_image_build
 on:
   push:
     tags:
@@ -45,7 +45,7 @@ jobs:
           if [[ `echo $DIFF_TAGS | wc -w` -gt 1 ]]
           then
             LIST_DIR=`git diff-tree --no-commit-id --dirstat=files,0  -r $DIFF_TAGS | awk  '{print $2;};' | sed -r 's/^([^/]*\/[^/]*)\/.*$/\1/'| uniq`
-            if [[ "$LIST_DIR" =~ libs ]]; then LIST_DIR=`ls -1d apps/*`;fi
+            if [[ "$LIST_DIR" =~ libs ]] && [[ -d apps ]]; then LIST_DIR=`ls -1d apps/*`;fi
           elif [[ -d apps ]]
           then 
             LIST_DIR=`ls -1d apps/*`
@@ -70,7 +70,6 @@ jobs:
                 then 
                     DOCKERFILE="${wl_service_dir}/Dockerfile"
                     BUILD_CONTEXT=""
-                    echo "APP_STRUCT=1">>"$GITHUB_ENV"
                 else
                     DOCKERFILE="Dockerfile"
                     BUILD_CONTEXT="${wl_service_dir}"
@@ -90,14 +89,11 @@ jobs:
       - name: version change in gitops repo
         env:
           CHANGED_WLS_DIRS: ${{ env.CHANGED_WLS_DIRS }}
-          APP_STRUCT: ${{ env.APP_STRUCT }}
         run: |-
           echo "CHANGED workload-services (array): ${CHANGED_WLS_DIRS[@]}"
           if [[ ${#CHANGED_WLS_DIRS[@]} -gt 0 ]]
           then
              echo "${CHANGED_WLS_DIRS[@]}"
-             if  [[ $APP_STRUCT -ne 1 ]]
-             then
                argo submit .argo/version-changer-wf.yaml \
               -p gitops-repo=<WL_GITOPS_REPOSITORY_GIT_URL> \
               -p wl-service-list="${CHANGED_WLS_DIRS[@]}" \
@@ -106,5 +102,4 @@ jobs:
               -p tag=${TAG} \
               --serviceaccount argo-workflow \
               --wait --log
-             fi
           fi
