@@ -27,7 +27,7 @@ spec:
         value: ''
   entrypoint: version-changer-seq
   imagePullSecrets:
-    - name: docker-config
+    - name: proxy-docker-config
   # onExit: exit-handler
   volumes:
     - name: ssh-key-vol
@@ -36,7 +36,7 @@ spec:
         defaultMode: 256
     - name: kaniko-secret
       secret:
-        secretName: docker-config
+        secretName: proxy-docker-config
         items:
           - key: .dockerconfigjson
             path: config.json

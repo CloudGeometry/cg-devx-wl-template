@@ -36,7 +36,7 @@ spec:
     retryStrategy:
       limit: 2
   imagePullSecrets:
-    - name: docker-config
+    - name: proxy-docker-config
   #  onExit: exit-handler
   volumes:
     - name: kaniko-secret
@@ -47,7 +47,7 @@ spec:
             path: config.json
     - name: crane-secret
       secret:
-        secretName: docker-config
+        secretName: push-docker-config
         items:
           - key: .dockerconfigjson
             path: config.json
