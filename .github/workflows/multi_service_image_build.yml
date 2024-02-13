@@ -95,7 +95,7 @@ jobs:
           then
              echo "${CHANGED_WLS_DIRS[@]}"
                argo submit .argo/version-changer-wf.yaml \
-              -p gitops-repo=<WL_GITOPS_REPOSITORY_GIT_URL> \
+              -p gitops-repo=git@github.com:<GIT_ORGANIZATION_NAME>/<WL_GITOPS_REPO_NAME>.git \
               -p wl-service-list="${CHANGED_WLS_DIRS[@]}" \
               -p env-path="gitops/environments/envs" \
               -p env-name="dev" \
