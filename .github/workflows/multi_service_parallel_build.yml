@@ -1,17 +1,19 @@
 ---
-name: multi_service_image_build
-on:
+name: multi_service_parallel_build
 # use workflow_dispatch to run the GHA manually
-  workflow_dispatch:
+# workflow_dispatch:
 # use on: push: tags to run the GHA on tag change
-  # push:
-  #   tags:
-  #     - '[0-9]+.[0-9]+.[0-9]+-?*'
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+-?*']
 env:
   TAG: ${{ github.ref }}
   REPO_NAME: ${{ github.repository }}
   ARGO_NAMESPACE: wl-<WL_NAME>-dev
   SEMVER_REGEX: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+  USE_CACHE: true # true of false
+  USE_MIRROR: true # true or anything
 jobs:
   multi_build:
     runs-on:
@@ -40,8 +42,10 @@ jobs:
            chmod +x argo-linux-amd64
            sudo mv ./argo-linux-amd64 /usr/local/bin/argo
            argo version
-      - name: argo execution
+      - name: build
+        # git clone and parallel kaniko build
         run: |
+          set -eu
           declare -a CHANGED_WLS_DIRS
           echo "TAG: $TAG"
           DIFF_TAGS=`git tag --sort=-creatordate | grep -P $SEMVER_REGEX | head -2`
@@ -66,6 +70,8 @@ jobs:
             fi
           done
           echo "CHANGED_WLS_DIRS=${CHANGED_WLS_DIRS[@]}">> "$GITHUB_ENV"
+          # kaniko parallel start
+          PIDS=()
           for wl_service_dir in ${CHANGED_WLS_DIRS[@]}
           do
               wl_service=`basename ${wl_service_dir}`
@@ -77,9 +83,12 @@ jobs:
                     DOCKERFILE="Dockerfile"
                     BUILD_CONTEXT="${wl_service_dir}"
               fi
-              argo submit .argo/wl-service-wf.yaml \
-                    --generate-name ${wl_service}-wf- \
-                    -p repo=git@github.com:<GIT_ORGANIZATION_NAME>/<WL_REPO_NAME>.git \
+              if [[ $USE_MIRROR != "true" ]]; then MIRROR_OPTION_STR="-p kaniko-registry-mirror=NOMIRROR"; else MIRROR_OPTION_STR=""; fi
+              argo submit .argo/build-wf.yaml \
+                    --generate-name ${wl_service}-wf-build- \
+                    $MIRROR_OPTION_STR \
+                    -p kaniko-cache=$USE_CACHE \
+                    -p repo=git@github.com:<GIT_ORGANIZATION_NAME>/<WL_REPO_NAME>.git\
                     -p wl-service-name=$wl_service \
                     -p workload-name=<WL_REPO_NAME> \
                     -p tag=$TAG \
@@ -87,8 +96,57 @@ jobs:
                     -p build-context=${BUILD_CONTEXT} \
                     -p wl-service-dir=${wl_service_dir} \
                     --serviceaccount argo-workflow \
-                    --wait --log
+                    --wait > /dev/null &
+
+              PIDS+=($!)
           done
+          for PID in "${PIDS[@]}"
+          do
+            if  wait -n
+            then
+                :
+            else
+                exit_status=$?
+                echo "EXIT STATUS $exit_status"
+                argo list -l stage=build
+                argo terminate -l stage=build
+                exit $exit_status
+            fi
+          done
+          echo "All builds succeeded."
+# parallel crane
+      - name: registry_put
+        env:
+          CHANGED_WLS_DIRS: ${{ env.CHANGED_WLS_DIRS }}
+        run: |-
+          echo "CHANGED workload-services (array): ${CHANGED_WLS_DIRS[@]}"
+          PIDS=()
+          for wl_service_dir in ${CHANGED_WLS_DIRS[@]}
+          do
+            wl_service=`basename ${wl_service_dir}`
+            argo submit .argo/crane-wf.yaml --serviceaccount argo-workflow \
+            --generate-name ${wl_service}-wf-crane- \
+            -p tag=$TAG \
+            -p workload-name=<WL_REPO_NAME> \
+            -p wl-service-name=$wl_service \
+            -p wl-service-dir=$wl_service_dir \
+            --wait > /dev/null  &
+            PIDS+=($!)
+          done
+          for PID in "${PIDS[@]}"
+          do
+            if  wait -n
+            then
+              :
+            else
+              exit_status=$?
+              echo "EXIT STATUS $exit_status"
+              argo list -l stage=crane
+              argo terminate -l stage=crane
+              exit $exit_status
+            fi
+          done
+          echo "All crane puts succeeded."
       - name: version change in gitops repo
         env:
           CHANGED_WLS_DIRS: ${{ env.CHANGED_WLS_DIRS }}
