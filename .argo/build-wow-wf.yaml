@@ -59,7 +59,8 @@ spec:
             generateName: build-service-{{inputs.parameters.wl-service-name}}-
             labels:
                stage: service-build
-               service: {{inputs.parameters.wl-service-name}}
+               service: {{inputs.parameters.wl-service-name}} 
+               workflows.argoproj.io/controller-instanceid: cgdevx 
           spec:
             artifactRepositoryRef:
               configMap: wl-artifactory-cm
