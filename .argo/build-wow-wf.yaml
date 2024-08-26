@@ -64,7 +64,7 @@ spec:
           spec:
             artifactRepositoryRef:
               configMap: wl-artifactory-cm
-              key: wl-pod-log-artifact-repository
+              key: workload-artifact-repository
             arguments:
               parameters:
                 - name: dockerhub-registry-proxy
