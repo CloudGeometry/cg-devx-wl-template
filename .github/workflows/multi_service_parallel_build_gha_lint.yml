@@ -1,5 +1,5 @@
 ---
-name: multi_service_parallel_build_gha
+name: multi_service_parallel_build
 # use workflow_dispatch to run the GHA manually
 on:
  workflow_dispatch:
