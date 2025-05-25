@@ -30,7 +30,7 @@ stages:
     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
     chmod +x kubectl
     sudo mv kubectl /usr/local/bin/
-    kubectl config use-context cgdevx-gitlab-ci/cgdevx-gitlab:gl-test-agent
+    kubectl config use-context $(kubectl config get-contexts -o name | head -n 1)
     curl -sLO https://github.com/argoproj/argo-workflows/releases/download/v3.5.10/argo-linux-amd64.gz
     gunzip argo-linux-amd64.gz
     chmod +x argo-linux-amd64
@@ -219,6 +219,6 @@ test-k8s:
     name: bitnami/kubectl:latest
     entrypoint: [""]
   script:
-    - kubectl config use-context cgdevx-gitlab-ci/cgdevx-gitlab:gl-test-agent
+    - kubectl config use-context $(kubectl config get-contexts -o name | head -n 1)
     - kubectl get ns
   when: manual
