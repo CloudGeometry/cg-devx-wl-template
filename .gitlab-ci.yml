@@ -6,7 +6,6 @@ stages:
   - registry_put
   - up_tags
   - version_change
-  - test
 
 .config:
   variables:
@@ -36,6 +35,11 @@ stages:
     chmod +x argo-linux-amd64
     sudo mv ./argo-linux-amd64 /usr/local/bin/argo
     argo version
+
+.tag_trigger_rule: &tag_trigger_rule
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^['[0-9]+.[0-9]+.[0-9]+-?*']/
+      when: always
 
 multi_build:
   extends: .config
@@ -109,6 +113,7 @@ multi_build:
   artifacts:
     reports:
       dotenv: build.env
+  <<: *tag_trigger_rule
 
 trivy_libs:
   stage: trivy_libs
@@ -131,6 +136,7 @@ trivy_libs:
       --log \
       --wait   && echo -e "-----------------------------------------------\nTrivy-fs for shared libs directory ["${LIBS_DIR}"] succeeded"
     fi
+  <<: *tag_trigger_rule
 
 registry_put:
   stage: registry_put
@@ -150,6 +156,8 @@ registry_put:
       -p service-list="$CHANGED_SVC_LIST_JSON" \
       --log \
       --wait   && echo -e "-----------------------------------------------\nAll crane puts succeeded."
+  <<: *tag_trigger_rule
+
 up_tags:
   stage: up_tags
   needs: ["registry_put"]
@@ -191,6 +199,8 @@ up_tags:
             --wait && echo -e "----------------------------------------\nAll services tagging succeeded."
         fi
       fi
+  <<: *tag_trigger_rule
+
 version_change:
   stage: version_change
   extends: .config
@@ -213,12 +223,5 @@ version_change:
           -p tag=${TAG} \
           --serviceaccount argo-workflow \
           --wait --log
-test-k8s:
-  stage: test
-  image:
-    name: bitnami/kubectl:latest
-    entrypoint: [""]
-  script:
-    - kubectl config use-context $(kubectl config get-contexts -o name | head -n 1)
-    - kubectl get ns
-  when: manual
+  <<: *tag_trigger_rule
+
