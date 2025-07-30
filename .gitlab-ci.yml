@@ -39,7 +39,6 @@ stages:
 .tag_trigger_rule: &tag_trigger_rule
   rules:
     - if: $CI_COMMIT_TAG =~ /^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9\-\.]+)?$/
-      when: always
 
 multi_build:
   extends: .config
@@ -158,7 +157,7 @@ registry_put:
 
 up_tags:
   stage: up_tags
-  needs: ["registry_put"]
+  needs: ["multi_build", "registry_put"]
   extends: .config
   script:
     - |
@@ -202,7 +201,7 @@ up_tags:
 version_change:
   stage: version_change
   extends: .config
-  needs: ["registry_put"]
+  needs: ["multi_build", "registry_put"]
   script:
     - *argo_install
     - |
