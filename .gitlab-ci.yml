@@ -157,7 +157,7 @@ registry_put:
 
 up_tags:
   stage: up_tags
-  needs: ["multi_build", "trivy_libs", registry_put"]
+  needs: ["multi_build", "trivy_libs", "registry_put"]
   extends: .config
   script:
     - |
